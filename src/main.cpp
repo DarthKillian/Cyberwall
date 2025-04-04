@@ -4,6 +4,7 @@
 // --- Constants and Pin Definitions ---
 #define TILT_UP_BTN 7              // Pin for tilting the wall up
 #define TILT_DOWN_BTN 8            // Pin for tilting the wall down
+#define CALIBRATE_BUTTON 4         // Pin for calibrating the wall
 #define LOWER_LIMIT A2             // Pin for lower limit switch
 #define UPPER_LIMIT A1             // Pin for upper limit switch
 #define NUMBER_OF_ACTUATORS 2      // Number of actuators in the system
@@ -31,6 +32,9 @@ unsigned long lastLogTime = 0;                                      // Last time
 ActuatorData actuators[NUMBER_OF_ACTUATORS];                        // Array for actuator data
 int direction = 0;                                                  // Movement direction: 1 (forward), -1 (reverse), 0 (stop)
 volatile unsigned long lastDebounceTime[NUMBER_OF_ACTUATORS] = {0}; // Debounce Timers
+int safetyPressed;                 // Safety button iterator variable to count how long the safety button has been pressed
+unsigned long prevSafetyPress = 0; // Safety button pressed time delay
+int calibrateButtonDelay = 15;        // Amount of time (in seconds) that safetyPressed must be pushed before running calibration
 
 // --- Function Prototypes ---
 void driveActuators();
@@ -56,6 +60,7 @@ void setup()
 
   pinMode(TILT_UP_BTN, INPUT_PULLUP);
   pinMode(TILT_DOWN_BTN, INPUT_PULLUP);
+  pinMode(CALIBRATE_BUTTON, INPUT_PULLUP);
   pinMode(LOWER_LIMIT, INPUT_PULLUP);
   pinMode(UPPER_LIMIT, INPUT_PULLUP);
 
@@ -65,6 +70,35 @@ void setup()
 
 void loop()
 {
+  if (digitalRead(TILT_UP_BTN) == HIGH && digitalRead(TILT_UP_BTN) == LOW && digitalRead(CALIBRATE_BUTTON) == HIGH)
+  {
+    direction = 1;
+    driveActuators();
+  }
+  else if (digitalRead(TILT_UP_BTN) == LOW && digitalRead(TILT_UP_BTN) == HIGH && digitalRead(CALIBRATE_BUTTON) == HIGH)
+  {
+    direction = -1;
+    driveActuators();
+  }
+
+  // Initiate calibration sequence by pressing and holding calibration button for the amount of time specified in the safetyToCalibrate var
+  if (digitalRead(CALIBRATE_BUTTON) == LOW && digitalRead(TILT_UP_BTN == HIGH) && digitalRead(TILT_DOWN_BTN) == HIGH && safetyPressed <= calibrateButtonDelay)
+  {
+    if (millis() - prevSafetyPress >= 1000)
+    {
+      prevSafetyPress = millis();
+      safetyPressed += 1;
+    }
+  }
+  else
+  {
+    safetyPressed = 0;
+  }
+
+  if (safetyPressed == calibrateButtonDelay)
+  {
+    safetyPressed = 0;
+  }
 }
 
 // --- Drive Actuators ---
@@ -121,19 +155,25 @@ void logActuatorStatus()
 
 // --- Move to Limit ---
 /** Moves actuators until they hit a limit (steps stop changing). */
-void moveToLimit(int speed) {
+void moveToLimit(int speed)
+{
   Serial.println("Moving to limit...");
-  for (int i = 0; i < NUMBER_OF_ACTUATORS; i++) {
+  for (int i = 0; i < NUMBER_OF_ACTUATORS; i++)
+  {
     actuators[i].steps = 0;
     actuators[i].prevSteps = 0;
   }
-  do {
-    for (int i = 0; i < NUMBER_OF_ACTUATORS; i++) {
+  do
+  {
+    for (int i = 0; i < NUMBER_OF_ACTUATORS; i++)
+    {
       actuators[i].prevSteps = actuators[i].steps;
     }
     timeElapsed = 0;
-    while (timeElapsed < 200) {
-      for (int i = 0; i < NUMBER_OF_ACTUATORS; i++) {
+    while (timeElapsed < 200)
+    {
+      for (int i = 0; i < NUMBER_OF_ACTUATORS; i++)
+      {
         analogWrite(FPWM[i], direction == 1 ? speed : 0);
         analogWrite(RPWM[i], direction == -1 ? speed : 0);
       }
@@ -143,9 +183,12 @@ void moveToLimit(int speed) {
 
 // --- Check Step Changes ---
 /** Returns true if any actuator's step count has changed. */
-bool haveStepsChanged() {
-  for (int i = 0; i < NUMBER_OF_ACTUATORS; i++) {
-    if (actuators[i].prevSteps != actuators[i].steps) {
+bool haveStepsChanged()
+{
+  for (int i = 0; i < NUMBER_OF_ACTUATORS; i++)
+  {
+    if (actuators[i].prevSteps != actuators[i].steps)
+    {
       return true;
     }
   }
@@ -153,15 +196,19 @@ bool haveStepsChanged() {
 }
 
 // --- Interrupt Handlers ---
-void counter_0() {
-  if (millis() - lastDebounceTime[0] > FALSE_PULSE_DELAY) {
+void counter_0()
+{
+  if (millis() - lastDebounceTime[0] > FALSE_PULSE_DELAY)
+  {
     lastDebounceTime[0] = millis();
     actuators[0].steps += direction;
   }
 }
 
-void counter_1() {
-  if (millis() - lastDebounceTime[1] > FALSE_PULSE_DELAY) {
+void counter_1()
+{
+  if (millis() - lastDebounceTime[1] > FALSE_PULSE_DELAY)
+  {
     lastDebounceTime[1] = millis();
     actuators[1].steps += direction;
   }
